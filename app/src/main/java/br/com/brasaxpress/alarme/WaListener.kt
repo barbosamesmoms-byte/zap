@@ -34,37 +34,46 @@ class WaListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val n = sbn.notification
-        getSharedPreferences("alarme_debug", MODE_PRIVATE).edit()
-            .putString("ultima", "Notificação recebida: ${sbn.packageName}; categoria=${n.category ?: "sem categoria"}; flags=${n.flags}")
-            .apply()
-        // Ignora apenas resumos. Notificações contínuas/de serviço também podem
-        // conter mensagens válidas em algumas versões do WhatsApp.
+        val e = n.extras
+        val pkg = sbn.packageName
+
+        // Só registra diagnóstico de apps que têm regra (evita lixo de outros apps)
+        val candidatas = Store.rules(this).filter { it.enabled && it.pkg == pkg }
+        if (candidatas.isEmpty()) return
+
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) {
-            diagnostic("Ignorada: resumo de notificações de ${sbn.packageName}")
+            diagnostic("Ignorada: resumo de notificações de $pkg")
             return
         }
         if (n.category == Notification.CATEGORY_CALL) {
-            diagnostic("Ignorada: chamada de ${sbn.packageName}")
+            diagnostic("Ignorada: chamada de $pkg")
             return
         }
 
-        val e = n.extras
+        val titulo = e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val texto = (e.getCharSequence(Notification.EXTRA_TEXT) ?: e.getCharSequence(Notification.EXTRA_BIG_TEXT))
+            ?.toString().orEmpty()
+
+        // "WhatsApp procurando novas mensagens" e similares não são mensagens
+        if (Rules.isWhatsApp(pkg) && Rules.isSync(n, titulo, texto)) {
+            diagnostic("Ignorada: aviso fixo/sincronização do WhatsApp (\"$titulo $texto\")")
+            return
+        }
+
         val isGroup = e.getBoolean("android.isGroupConversation", false) ||
             e.getCharSequence("android.conversationTitle") != null
 
         val agora = Calendar.getInstance()
-        val regras = Store.rules(this)
-        val candidatas = regras.filter { it.enabled && it.pkg == sbn.packageName }
         val r = candidatas
             .filter { Rules.active(it, agora) && Rules.typeOk(it, isGroup) }
             .maxByOrNull { it.volume }
         if (r == null) {
-            diagnostic("Notificação de ${sbn.packageName}, sem regra ativa correspondente. Regras deste app: ${candidatas.size}")
+            diagnostic("Mensagem de $pkg fora do dia/horário ou do tipo da regra")
             return
         }
 
-        val quem = e.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: r.label
-        diagnostic("Regra encontrada: ${r.label}; iniciando alarme para ${sbn.packageName}")
+        val quem = titulo.ifEmpty { r.label }
+        diagnostic("Mensagem de $quem → tocando alarme")
         AlarmPlayer.trigger(this, "${r.label}: $quem", r.volume)
     }
 }

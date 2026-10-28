@@ -42,7 +42,8 @@ object AlarmPlayer {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(ctx, CH)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setColor(android.graphics.Color.parseColor("#FF7A1A"))
             .setContentTitle(t)
             .setContentText("Toque e deslize para parar")
             .setPriority(NotificationCompat.PRIORITY_MAX)

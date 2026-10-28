@@ -1,5 +1,6 @@
 package br.com.brasaxpress.alarme
 
+import android.app.Notification
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
@@ -73,6 +74,25 @@ object Rules {
     }
 
     fun isWhatsApp(pkg: String) = pkg.startsWith("com.whatsapp")
+
+    /**
+     * Notificações do WhatsApp que NÃO são mensagens: o aviso fixo "procurando novas mensagens",
+     * sincronização, chamadas em andamento etc. Mensagens de verdade não são notificações fixas.
+     */
+    fun isSync(n: Notification, titulo: String, texto: String): Boolean {
+        val fixa = n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
+        if (fixa) return true
+        val e = n.extras
+        val template = e.getString(Notification.EXTRA_TEMPLATE) ?: ""
+        val pareceMensagem = n.category == Notification.CATEGORY_MESSAGE ||
+            template.contains("MessagingStyle") ||
+            e.getCharSequence("android.conversationTitle") != null ||
+            e.containsKey("android.messages")
+        if (pareceMensagem) return false
+        val t = "$titulo $texto".lowercase()
+        return listOf("novas mensagens", "new messages", "sincroniz", "syncing", "procurando", "verificando", "checking")
+            .any { t.contains(it) }
+    }
 
     fun typeOk(r: Rule, isGroup: Boolean): Boolean {
         if (!isWhatsApp(r.pkg) || r.type == 0) return true
