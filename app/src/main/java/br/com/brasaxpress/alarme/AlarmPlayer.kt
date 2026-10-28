@@ -10,6 +10,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.os.Build
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -18,10 +19,13 @@ import androidx.core.app.NotificationCompat
 object AlarmPlayer {
     const val CH = "alarme"
     const val ID = 1
+    const val ACTION_START = "br.com.brasaxpress.alarme.START"
+    const val ACTION_STOP = "br.com.brasaxpress.alarme.STOP"
 
     @Volatile var active = false
     @Volatile var title = "Alarme"
     private var player: MediaPlayer? = null
+    private var vibrator: Vibrator? = null
 
     fun notif(ctx: Context, t: String): Notification {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -29,11 +33,12 @@ object AlarmPlayer {
             NotificationChannel(CH, "Alarme", NotificationManager.IMPORTANCE_HIGH).apply {
                 setSound(null, null)
                 enableVibration(false)
+                setBypassDnd(false)
             }
         )
         val pi = PendingIntent.getActivity(
             ctx, 0,
-            Intent(ctx, RingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(ctx, RingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(ctx, CH)
@@ -43,20 +48,54 @@ object AlarmPlayer {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
+            .setAutoCancel(false)
             .setFullScreenIntent(pi, true)
             .setContentIntent(pi)
             .build()
     }
 
-    /** Mostra o aviso na tela e toca o alarme. */
     fun trigger(ctx: Context, t: String, vol: Int) {
-        if (active) return
-        title = t
-        ctx.getSystemService(NotificationManager::class.java).notify(ID, notif(ctx, t))
-        start(ctx, vol)
+        // Não confie somente na variável active: ela pode ficar desatualizada se o
+        // Android interromper o player ou se a inicialização do serviço falhar.
+        if (active) {
+            val tocando = try { player?.isPlaying == true } catch (_: Exception) { false }
+            if (tocando) return
+            stopLocal(ctx)
+        }
+        val i = Intent(ctx, AlarmService::class.java).apply {
+            action = ACTION_START
+            putExtra("title", t)
+            putExtra("volume", vol)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
+            else ctx.startService(i)
+        } catch (e: Exception) {
+            // Fallback: algumas versões do Android impedem iniciar um serviço em
+            // primeiro plano a partir do callback em segundo plano. Ainda assim,
+            // inicia o áudio/vibração diretamente para não perder o alerta.
+            title = t
+            startNow(ctx, vol)
+            try {
+                ctx.getSystemService(NotificationManager::class.java).notify(ID, notif(ctx, t))
+            } catch (_: Exception) {}
+        }
     }
 
-    private fun start(ctx: Context, vol: Int) {
+    private fun stopLocal(ctx: Context) {
+        try { player?.setOnCompletionListener(null) } catch (_: Exception) {}
+        try { player?.stop() } catch (_: Exception) {}
+        try { player?.reset() } catch (_: Exception) {}
+        try { player?.release() } catch (_: Exception) {}
+        player = null
+        try { vibrator?.cancel() } catch (_: Exception) {}
+        vibrator = null
+        try { ctx.getSystemService(Vibrator::class.java)?.cancel() } catch (_: Exception) {}
+        active = false
+    }
+
+    fun startNow(ctx: Context, vol: Int) {
+        if (active) return
         active = true
         try {
             val am = ctx.getSystemService(AudioManager::class.java)
@@ -64,6 +103,7 @@ object AlarmPlayer {
             am.setStreamVolume(AudioManager.STREAM_ALARM, (max * vol / 100).coerceIn(1, max), 0)
         } catch (_: Exception) {}
         try {
+            player?.release()
             player = MediaPlayer().apply {
                 setWakeMode(ctx, PowerManager.PARTIAL_WAKE_LOCK)
                 setAudioAttributes(
@@ -72,22 +112,32 @@ object AlarmPlayer {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                setDataSource(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+                val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                if (alarmUri == null) throw IllegalStateException("Nenhum toque padrão configurado")
+                setDataSource(ctx, alarmUri)
                 isLooping = true
                 prepare()
                 start()
             }
         } catch (_: Exception) {}
-        ctx.getSystemService(Vibrator::class.java)
-            .vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0))
+        try {
+            vibrator = ctx.getSystemService(Vibrator::class.java)
+            vibrator?.cancel()
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0))
+        } catch (_: Exception) {}
     }
 
     fun stop(ctx: Context) {
-        try { player?.stop() } catch (_: Exception) {}
-        player?.release()
-        player = null
-        ctx.getSystemService(Vibrator::class.java).cancel()
-        ctx.getSystemService(NotificationManager::class.java).cancel(ID)
+        // Stop the actual service as well as all local playback resources. This makes
+        // the slide-to-stop control work even if the alarm was started in background.
         active = false
+        try {
+            ctx.startService(Intent(ctx, AlarmService::class.java).apply { action = ACTION_STOP })
+        } catch (_: Exception) {}
+        stopLocal(ctx)
+        try { ctx.getSystemService(NotificationManager::class.java).cancel(ID) } catch (_: Exception) {}
+        try { ctx.stopService(Intent(ctx, AlarmService::class.java)) } catch (_: Exception) {}
     }
 }

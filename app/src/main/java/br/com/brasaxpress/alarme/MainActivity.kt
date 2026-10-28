@@ -57,8 +57,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         val ok = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
-        status.text = if (ok) "✅ Acesso às notificações liberado"
+        val accessText = if (ok) "✅ Acesso às notificações liberado"
         else "⚠️ Falta liberar o acesso às notificações (botão 1, abaixo)"
+        val debug = getSharedPreferences("alarme_debug", MODE_PRIVATE)
+        val listener = debug.getString("listener", "aguardando conexão")
+        val ultima = debug.getString("ultima", "Nenhuma notificação recebida desde a instalação desta versão")
+        status.text = "$accessText\nServiço de notificações: $listener\nDiagnóstico: $ultima"
         render()
     }
 
