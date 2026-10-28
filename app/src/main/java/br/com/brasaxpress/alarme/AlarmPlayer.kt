@@ -10,6 +10,7 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.core.app.NotificationCompat
@@ -47,26 +48,36 @@ object AlarmPlayer {
             .build()
     }
 
-    fun start(ctx: Context, vol: Int) {
+    /** Mostra o aviso na tela e toca o alarme. */
+    fun trigger(ctx: Context, t: String, vol: Int) {
         if (active) return
+        title = t
+        ctx.getSystemService(NotificationManager::class.java).notify(ID, notif(ctx, t))
+        start(ctx, vol)
+    }
+
+    private fun start(ctx: Context, vol: Int) {
         active = true
         try {
             val am = ctx.getSystemService(AudioManager::class.java)
             val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
             am.setStreamVolume(AudioManager.STREAM_ALARM, (max * vol / 100).coerceIn(1, max), 0)
         } catch (_: Exception) {}
-        player = MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            setDataSource(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-            isLooping = true
-            prepare()
-            start()
-        }
+        try {
+            player = MediaPlayer().apply {
+                setWakeMode(ctx, PowerManager.PARTIAL_WAKE_LOCK)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(ctx, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+                isLooping = true
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {}
         ctx.getSystemService(Vibrator::class.java)
             .vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0))
     }
@@ -77,7 +88,6 @@ object AlarmPlayer {
         player = null
         ctx.getSystemService(Vibrator::class.java).cancel()
         ctx.getSystemService(NotificationManager::class.java).cancel(ID)
-        ctx.stopService(Intent(ctx, AlarmService::class.java))
         active = false
     }
 }

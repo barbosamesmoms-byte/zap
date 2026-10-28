@@ -1,11 +1,3 @@
 package br.com.brasaxpress.alarme
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-
-class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
-        Scheduler.scheduleAll(c)
-    }
-}
+// arquivo não usado nesta versão

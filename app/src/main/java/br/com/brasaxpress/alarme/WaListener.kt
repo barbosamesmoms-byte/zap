@@ -1,29 +1,29 @@
 package br.com.brasaxpress.alarme
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.util.Calendar
 
 class WaListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != "com.whatsapp" && sbn.packageName != "com.whatsapp.w4b") return
-        if (!Store.waOn(this) || AlarmPlayer.active) return
-        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (AlarmPlayer.active) return
+        val n = sbn.notification
+        // Ignora resumo ("3 mensagens de 2 conversas"), notificações fixas (sincronização) e chamadas
+        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (n.flags and Notification.FLAG_ONGOING_EVENT != 0) return
+        if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_SERVICE) return
 
-        val terms = Store.waTerms(this).split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-        if (terms.isEmpty()) return
+        val e = n.extras
+        val isGroup = e.getBoolean("android.isGroupConversation", false) ||
+            e.getCharSequence("android.conversationTitle") != null
 
-        val e = sbn.notification.extras
-        val title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-        val text = e.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
-        val hay = "$title $text".lowercase()
-        if (terms.none { hay.contains(it) }) return
+        val agora = Calendar.getInstance()
+        val r = Store.rules(this)
+            .filter { it.enabled && it.pkg == sbn.packageName && Rules.active(it, agora) && Rules.typeOk(it, isGroup) }
+            .maxByOrNull { it.volume } ?: return
 
-        // O listener ja roda em processo vivo: toca direto, sem iniciar servico em segundo plano.
-        val t = "WhatsApp: $title"
-        AlarmPlayer.title = t
-        getSystemService(NotificationManager::class.java).notify(AlarmPlayer.ID, AlarmPlayer.notif(this, t))
-        AlarmPlayer.start(this, Store.waVolume(this))
+        val quem = e.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: r.label
+        AlarmPlayer.trigger(this, "${r.label}: $quem", r.volume)
     }
 }
