@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.net.Uri
 import android.view.Gravity
 import android.widget.*
 import androidx.core.app.NotificationManagerCompat
@@ -44,8 +45,20 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         })
         root.addView(Button(this).apply {
-            text = "2. Tirar da economia de bateria"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            text = "2. Permitir execução em segundo plano"
+            setOnClickListener {
+                val pm = getSystemService(android.os.PowerManager::class.java)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:$packageName")))
+                    } else {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                } catch (_: Exception) {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            }
         })
         root.addView(Button(this).apply {
             text = "Testar alarme"
@@ -62,7 +75,8 @@ class MainActivity : Activity() {
         val debug = getSharedPreferences("alarme_debug", MODE_PRIVATE)
         val listener = debug.getString("listener", "aguardando conexão")
         val ultima = debug.getString("ultima", "Nenhuma notificação recebida desde a instalação desta versão")
-        status.text = "$accessText\nServiço de notificações: $listener\nDiagnóstico: $ultima"
+        val alarme = debug.getString("alarme", "nenhuma tentativa registrada")
+        status.text = "$accessText\nServiço de notificações: $listener\nDiagnóstico: $ultima\nÚltima tentativa do alarme: $alarme"
         render()
     }
 

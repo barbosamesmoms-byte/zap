@@ -68,9 +68,15 @@ object AlarmPlayer {
             putExtra("volume", vol)
         }
         try {
+            ctx.getSharedPreferences("alarme_debug", Context.MODE_PRIVATE).edit()
+                .putString("alarme", "Solicitação enviada ao serviço de alarme")
+                .apply()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
             else ctx.startService(i)
         } catch (e: Exception) {
+            ctx.getSharedPreferences("alarme_debug", Context.MODE_PRIVATE).edit()
+                .putString("alarme", "Android recusou iniciar serviço: ${e.javaClass.simpleName}")
+                .apply()
             // Fallback: algumas versões do Android impedem iniciar um serviço em
             // primeiro plano a partir do callback em segundo plano. Ainda assim,
             // inicia o áudio/vibração diretamente para não perder o alerta.

@@ -18,9 +18,23 @@ class AlarmService : Service() {
                 val t = intent.getStringExtra("title") ?: "Alarme"
                 val vol = intent.getIntExtra("volume", 100)
                 AlarmPlayer.title = t
-                // É obrigatório promover o serviço imediatamente para primeiro plano.
-                startForeground(AlarmPlayer.ID, AlarmPlayer.notif(this, t))
-                AlarmPlayer.startNow(this, vol)
+                try {
+                    // Promova o serviço antes de iniciar reprodução ou abrir a tela.
+                    startForeground(AlarmPlayer.ID, AlarmPlayer.notif(this, t))
+                    AlarmPlayer.startNow(this, vol)
+                    getSharedPreferences("alarme_debug", MODE_PRIVATE).edit()
+                        .putString("alarme", "Serviço em primeiro plano iniciado")
+                        .apply()
+                } catch (e: Exception) {
+                    getSharedPreferences("alarme_debug", MODE_PRIVATE).edit()
+                        .putString("alarme", "Falha ao iniciar serviço em primeiro plano: ${e.javaClass.simpleName}")
+                        .apply()
+                    // Tenta manter o alerta audível mesmo quando o Android recusa
+                    // a promoção. O diagnóstico acima registra a limitação.
+                    AlarmPlayer.startNow(this, vol)
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
                 try {
                     val screen = Intent(this, RingActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -30,11 +44,6 @@ class AlarmService : Service() {
             }
         }
         return START_NOT_STICKY
-    }
-
-    override fun onDestroy() {
-        AlarmPlayer.active = false
-        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
