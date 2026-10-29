@@ -8,6 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Usar a versão enviada em zip
+        run: |
+          ZIP=$(ls alarme-zap-v*.zip 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$ZIP" ]; then echo "Usando $ZIP"; unzip -o "$ZIP" -d .; fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
